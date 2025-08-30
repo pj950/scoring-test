@@ -23,6 +23,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).end();
     }
 
+    console.log('[DATA API] Request:', {
+        method: req.method,
+        url: req.url,
+        query: req.query,
+        hasDbUrl: !!process.env.DATABASE_URL
+    });
+
     if (!process.env.DATABASE_URL) {
         console.error('FATAL: DATABASE_URL environment variable is not set.');
         return res.status(500).json({
@@ -34,57 +41,96 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const client = new Pool({ connectionString: process.env.DATABASE_URL });
     const { entity, id, judgeId, teamId } = req.query;
 
+    // Test database connection first
+    try {
+        await client.query('SELECT 1');
+        console.log('[DATA API] Database connection successful');
+    } catch (connError) {
+        console.error('[DATA API] Database connection failed:', connError);
+        return res.status(500).json({
+            error: 'Database Connection Failed',
+            message: connError instanceof Error ? connError.message : 'Unknown connection error'
+        });
+    }
+
     try {
         // --- GET Requests ---
         if (req.method === 'GET') {
             if (entity === 'init') {
-                // Initialize database tables if they don't exist
-                await client.query(`
-                    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+                try {
+                    // Initialize database tables step by step
+                    console.log('[INIT] Creating UUID extension...');
+                    await client.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
                     
-                    CREATE TABLE IF NOT EXISTS teams (
-                        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-                        name VARCHAR(255) NOT NULL,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                    );
+                    console.log('[INIT] Creating teams table...');
+                    await client.query(`
+                        CREATE TABLE IF NOT EXISTS teams (
+                            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                            name VARCHAR(255) NOT NULL,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        )
+                    `);
                     
-                    CREATE TABLE IF NOT EXISTS judges (
-                        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-                        name VARCHAR(255) NOT NULL,
-                        secret_id VARCHAR(255) NOT NULL UNIQUE,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                    );
+                    console.log('[INIT] Creating judges table...');
+                    await client.query(`
+                        CREATE TABLE IF NOT EXISTS judges (
+                            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                            name VARCHAR(255) NOT NULL,
+                            secret_id VARCHAR(255) NOT NULL UNIQUE,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        )
+                    `);
                     
-                    CREATE TABLE IF NOT EXISTS criteria (
-                        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-                        name VARCHAR(255) NOT NULL,
-                        weight INTEGER NOT NULL,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                    );
+                    console.log('[INIT] Creating criteria table...');
+                    await client.query(`
+                        CREATE TABLE IF NOT EXISTS criteria (
+                            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                            name VARCHAR(255) NOT NULL,
+                            weight INTEGER NOT NULL,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        )
+                    `);
                     
-                    CREATE TABLE IF NOT EXISTS ratings (
-                        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-                        judge_id UUID NOT NULL REFERENCES judges(id) ON DELETE CASCADE,
-                        team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
-                        scores JSONB NOT NULL,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        UNIQUE(judge_id, team_id)
-                    );
+                    console.log('[INIT] Creating app_state table...');
+                    await client.query(`
+                        CREATE TABLE IF NOT EXISTS app_state (
+                            id INT PRIMARY KEY DEFAULT 1,
+                            is_setup_locked BOOLEAN NOT NULL DEFAULT FALSE,
+                            active_team_ids UUID[] DEFAULT ARRAY[]::UUID[],
+                            scoring_system INTEGER NOT NULL DEFAULT 10,
+                            CONSTRAINT single_row CHECK (id = 1),
+                            CONSTRAINT valid_scoring_system CHECK (scoring_system IN (10, 100))
+                        )
+                    `);
                     
-                    CREATE TABLE IF NOT EXISTS app_state (
-                        id INT PRIMARY KEY DEFAULT 1,
-                        is_setup_locked BOOLEAN NOT NULL DEFAULT FALSE,
-                        active_team_ids UUID[] DEFAULT ARRAY[]::UUID[],
-                        scoring_system INTEGER NOT NULL DEFAULT 10,
-                        CONSTRAINT single_row CHECK (id = 1),
-                        CONSTRAINT valid_scoring_system CHECK (scoring_system IN (10, 100))
-                    );
+                    console.log('[INIT] Creating ratings table...');
+                    await client.query(`
+                        CREATE TABLE IF NOT EXISTS ratings (
+                            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                            judge_id UUID NOT NULL REFERENCES judges(id) ON DELETE CASCADE,
+                            team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                            scores JSONB NOT NULL,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            UNIQUE(judge_id, team_id)
+                        )
+                    `);
                     
-                    INSERT INTO app_state (id, is_setup_locked, active_team_ids, scoring_system)
-                    VALUES (1, FALSE, ARRAY[]::UUID[], 10)
-                    ON CONFLICT (id) DO NOTHING;
-                `);
-                return res.status(200).json({ success: true, message: 'Database initialized successfully' });
+                    console.log('[INIT] Inserting initial app_state...');
+                    await client.query(`
+                        INSERT INTO app_state (id, is_setup_locked, active_team_ids, scoring_system)
+                        VALUES (1, FALSE, ARRAY[]::UUID[], 10)
+                        ON CONFLICT (id) DO NOTHING
+                    `);
+                    
+                    console.log('[INIT] Database initialization completed successfully');
+                    return res.status(200).json({ success: true, message: 'Database initialized successfully' });
+                } catch (initError) {
+                    console.error('[INIT] Database initialization failed:', initError);
+                    return res.status(500).json({
+                        error: 'Database initialization failed',
+                        message: initError instanceof Error ? initError.message : 'Unknown error'
+                    });
+                }
             }
             
             if (entity === 'teams') {
@@ -145,39 +191,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 }
             }
             if (entity === 'activeTeamIds') {
-                // Ensure app_state table exists and has initial data
-                await client.query(`
-                    INSERT INTO app_state (id, is_setup_locked, active_team_ids, scoring_system)
-                    VALUES (1, FALSE, ARRAY[]::UUID[], 10)
-                    ON CONFLICT (id) DO NOTHING
-                `);
-                const { rows } = await client.query('SELECT active_team_ids FROM app_state WHERE id = 1');
-                return res.status(200).json(rows.length > 0 ? rows[0].active_team_ids : []);
+                try {
+                    const { rows } = await client.query('SELECT active_team_ids FROM app_state WHERE id = 1');
+                    return res.status(200).json(rows.length > 0 ? rows[0].active_team_ids : []);
+                } catch (error) {
+                    console.error('[activeTeamIds] Error:', error);
+                    return res.status(200).json([]);
+                }
             }
             if (entity === 'scoringSystem') {
-                // Ensure app_state table exists and has initial data
-                await client.query(`
-                    INSERT INTO app_state (id, is_setup_locked, active_team_ids, scoring_system)
-                    VALUES (1, FALSE, ARRAY[]::UUID[], 10)
-                    ON CONFLICT (id) DO NOTHING
-                `);
-                const { rows } = await client.query('SELECT scoring_system FROM app_state WHERE id = 1');
-                return res.status(200).json(rows.length > 0 ? rows[0].scoring_system : 10);
+                try {
+                    const { rows } = await client.query('SELECT scoring_system FROM app_state WHERE id = 1');
+                    return res.status(200).json(rows.length > 0 ? rows[0].scoring_system : 10);
+                } catch (error) {
+                    console.error('[scoringSystem] Error:', error);
+                    return res.status(200).json(10);
+                }
             }
             if (entity === 'finalScores') {
-                // Ensure app_state table exists and has initial data
-                await client.query(`
-                    INSERT INTO app_state (id, is_setup_locked, active_team_ids, scoring_system)
-                    VALUES (1, FALSE, ARRAY[]::UUID[], 10)
-                    ON CONFLICT (id) DO NOTHING
-                `);
-                
-                const [teamsRes, criteriaRes, ratingsRes, scoringSystemRes] = await Promise.all([
-                    client.query('SELECT id, name FROM teams'),
-                    client.query('SELECT id, weight FROM criteria'),
-                    client.query('SELECT team_id, judge_id, scores FROM ratings'),
-                    client.query('SELECT scoring_system FROM app_state WHERE id = 1'),
-                ]);
+                try {
+                    const [teamsRes, criteriaRes, ratingsRes, scoringSystemRes] = await Promise.all([
+                        client.query('SELECT id, name FROM teams'),
+                        client.query('SELECT id, weight FROM criteria'),
+                        client.query('SELECT team_id, judge_id, scores FROM ratings'),
+                        client.query('SELECT scoring_system FROM app_state WHERE id = 1'),
+                    ]);
                 
                 const teams = teamsRes.rows;
                 const criteria: {id: string, weight: number}[] = criteriaRes.rows;
@@ -240,6 +278,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 });
 
                 return res.status(200).json(finalRankedScores);
+                } catch (finalScoresError) {
+                    console.error('[finalScores] Error:', finalScoresError);
+                    return res.status(200).json([]);
+                }
             }
         }
 

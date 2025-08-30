@@ -28,6 +28,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).end();
     }
 
+    console.log('[AUTH API] Request:', {
+        method: req.method,
+        url: req.url,
+        query: req.query,
+        hasDbUrl: !!process.env.DATABASE_URL
+    });
+
+    if (!process.env.DATABASE_URL) {
+        console.error('[AUTH] DATABASE_URL not configured');
+        return res.status(500).json({
+            error: 'Server Configuration Error',
+            message: 'Database connection not configured'
+        });
+    }
+
     const client = new Pool({ connectionString: process.env.DATABASE_URL });
     const { action } = req.query;
 
