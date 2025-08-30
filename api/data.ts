@@ -37,52 +37,141 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
         // --- GET Requests ---
         if (req.method === 'GET') {
+            if (entity === 'init') {
+                // Initialize database tables if they don't exist
+                await client.query(`
+                    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+                    
+                    CREATE TABLE IF NOT EXISTS teams (
+                        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                        name VARCHAR(255) NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    );
+                    
+                    CREATE TABLE IF NOT EXISTS judges (
+                        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                        name VARCHAR(255) NOT NULL,
+                        secret_id VARCHAR(255) NOT NULL UNIQUE,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    );
+                    
+                    CREATE TABLE IF NOT EXISTS criteria (
+                        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                        name VARCHAR(255) NOT NULL,
+                        weight INTEGER NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    );
+                    
+                    CREATE TABLE IF NOT EXISTS ratings (
+                        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                        judge_id UUID NOT NULL REFERENCES judges(id) ON DELETE CASCADE,
+                        team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                        scores JSONB NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        UNIQUE(judge_id, team_id)
+                    );
+                    
+                    CREATE TABLE IF NOT EXISTS app_state (
+                        id INT PRIMARY KEY DEFAULT 1,
+                        is_setup_locked BOOLEAN NOT NULL DEFAULT FALSE,
+                        active_team_ids UUID[] DEFAULT ARRAY[]::UUID[],
+                        scoring_system INTEGER NOT NULL DEFAULT 10,
+                        CONSTRAINT single_row CHECK (id = 1),
+                        CONSTRAINT valid_scoring_system CHECK (scoring_system IN (10, 100))
+                    );
+                    
+                    INSERT INTO app_state (id, is_setup_locked, active_team_ids, scoring_system)
+                    VALUES (1, FALSE, ARRAY[]::UUID[], 10)
+                    ON CONFLICT (id) DO NOTHING;
+                `);
+                return res.status(200).json({ success: true, message: 'Database initialized successfully' });
+            }
+            
             if (entity === 'teams') {
-                const { rows } = await client.query('SELECT * FROM teams ORDER BY created_at ASC');
-                return res.status(200).json(rows);
+                try {
+                    const { rows } = await client.query('SELECT * FROM teams ORDER BY created_at ASC');
+                    return res.status(200).json(rows);
+                } catch (tableError) {
+                    console.error('Teams table error:', tableError);
+                    return res.status(200).json([]);
+                }
             }
             if (entity === 'judges') {
-                const { rows } = await client.query('SELECT * FROM judges ORDER BY created_at ASC');
-                return res.status(200).json(rows);
+                try {
+                    const { rows } = await client.query('SELECT * FROM judges ORDER BY created_at ASC');
+                    return res.status(200).json(rows);
+                } catch (tableError) {
+                    console.error('Judges table error:', tableError);
+                    return res.status(200).json([]);
+                }
             }
             if (entity === 'criteria') {
-                const { rows } = await client.query('SELECT * FROM criteria ORDER BY created_at ASC');
-                return res.status(200).json(rows);
+                try {
+                    const { rows } = await client.query('SELECT * FROM criteria ORDER BY created_at ASC');
+                    return res.status(200).json(rows);
+                } catch (tableError) {
+                    console.error('Criteria table error:', tableError);
+                    return res.status(200).json([]);
+                }
             }
             if (entity === 'scores') {
-                if (judgeId && teamId) {
-                    const { rows } = await client.query('SELECT scores FROM ratings WHERE judge_id = $1 AND team_id = $2', [judgeId, teamId]);
-                    if (rows.length > 0) {
-                        return res.status(200).json({ teamId, judgeId, scores: rows[0].scores });
+                try {
+                    if (judgeId && teamId) {
+                        const { rows } = await client.query('SELECT scores FROM ratings WHERE judge_id = $1 AND team_id = $2', [judgeId, teamId]);
+                        if (rows.length > 0) {
+                            return res.status(200).json({ teamId, judgeId, scores: rows[0].scores });
+                        }
+                        return res.status(200).json(null); // Return null if no score found
                     }
-                    return res.status(200).json(null); // Return null if no score found
-                }
-                if (judgeId) {
-                    const { rows } = await client.query('SELECT team_id, scores FROM ratings WHERE judge_id = $1', [judgeId]);
-                    const formattedScores = rows.map(row => ({
+                    if (judgeId) {
+                        const { rows } = await client.query('SELECT team_id, scores FROM ratings WHERE judge_id = $1', [judgeId]);
+                        const formattedScores = rows.map(row => ({
+                            teamId: row.team_id,
+                            judgeId,
+                            scores: row.scores
+                        }));
+                        return res.status(200).json(formattedScores);
+                    }
+                    const { rows } = await client.query('SELECT team_id, judge_id, scores FROM ratings');
+                    const allScores = rows.map(row => ({
                         teamId: row.team_id,
-                        judgeId,
+                        judgeId: row.judge_id,
                         scores: row.scores
                     }));
-                    return res.status(200).json(formattedScores);
+                    return res.status(200).json(allScores);
+                } catch (scoresError) {
+                    console.error('Scores query error:', scoresError);
+                    return res.status(200).json([]);
                 }
-                const { rows } = await client.query('SELECT team_id, judge_id, scores FROM ratings');
-                const allScores = rows.map(row => ({
-                    teamId: row.team_id,
-                    judgeId: row.judge_id,
-                    scores: row.scores
-                }));
-                return res.status(200).json(allScores);
             }
             if (entity === 'activeTeamIds') {
-                 const { rows } = await client.query('SELECT active_team_ids FROM app_state WHERE id = 1');
-                 return res.status(200).json(rows.length > 0 ? rows[0].active_team_ids : []);
+                // Ensure app_state table exists and has initial data
+                await client.query(`
+                    INSERT INTO app_state (id, is_setup_locked, active_team_ids, scoring_system)
+                    VALUES (1, FALSE, ARRAY[]::UUID[], 10)
+                    ON CONFLICT (id) DO NOTHING
+                `);
+                const { rows } = await client.query('SELECT active_team_ids FROM app_state WHERE id = 1');
+                return res.status(200).json(rows.length > 0 ? rows[0].active_team_ids : []);
             }
             if (entity === 'scoringSystem') {
+                // Ensure app_state table exists and has initial data
+                await client.query(`
+                    INSERT INTO app_state (id, is_setup_locked, active_team_ids, scoring_system)
+                    VALUES (1, FALSE, ARRAY[]::UUID[], 10)
+                    ON CONFLICT (id) DO NOTHING
+                `);
                 const { rows } = await client.query('SELECT scoring_system FROM app_state WHERE id = 1');
                 return res.status(200).json(rows.length > 0 ? rows[0].scoring_system : 10);
             }
             if (entity === 'finalScores') {
+                // Ensure app_state table exists and has initial data
+                await client.query(`
+                    INSERT INTO app_state (id, is_setup_locked, active_team_ids, scoring_system)
+                    VALUES (1, FALSE, ARRAY[]::UUID[], 10)
+                    ON CONFLICT (id) DO NOTHING
+                `);
+                
                 const [teamsRes, criteriaRes, ratingsRes, scoringSystemRes] = await Promise.all([
                     client.query('SELECT id, name FROM teams'),
                     client.query('SELECT id, weight FROM criteria'),
@@ -224,8 +313,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     } catch (error) {
         console.error('API Error:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+        console.error('Error details:', {
+            message: error instanceof Error ? error.message : 'Unknown error',
+            stack: error instanceof Error ? error.stack : undefined,
+            query: req.query,
+            method: req.method,
+            url: req.url
+        });
+        res.status(500).json({ 
+            error: 'Internal Server Error',
+            message: error instanceof Error ? error.message : 'Unknown error',
+            entity: entity,
+            action: req.method
+        });
     } finally {
-        await client.end();
+        try {
+            await client.end();
+        } catch (closeError) {
+            console.error('Error closing database connection:', closeError);
+        }
     }
 }
