@@ -7,8 +7,10 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
-    sourcemap: false
+    sourcemap: false,
+    copyPublicDir: true
   },
+  publicDir: 'public',
   server: {
     proxy: {
       '/api': 'http://localhost:3000' // Make sure to run `vercel dev` on port 3000
