@@ -17,6 +17,17 @@ async function verifyToken(token: string | undefined) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+    // Enable CORS for all origins
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    
+    // Handle preflight OPTIONS request
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+
     const client = new Pool({ connectionString: process.env.DATABASE_URL });
     const { action } = req.query;
 
@@ -55,7 +66,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         if (req.method === 'GET' && action === 'session') {
-            const token = req.cookies[COOKIE_NAME];
+            const cookies = cookie.parse(req.headers.cookie || '');
+            const token = cookies[COOKIE_NAME];
             const payload = await verifyToken(token);
             if (payload) {
                 return res.status(200).json(payload);
