@@ -55,7 +55,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         if (req.method === 'GET' && action === 'session') {
-            const token = req.cookies[COOKIE_NAME];
+            const cookies = cookie.parse(req.headers.cookie || '');
+            const token = cookies[COOKIE_NAME];
             const payload = await verifyToken(token);
             if (payload) {
                 return res.status(200).json(payload);
