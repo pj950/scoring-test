@@ -18,9 +18,12 @@ export default async function handler(req, res) {
 
         console.log('[DATA] Request:', { entity, method: req.method, hasDbUrl: !!process.env.DATABASE_URL });
 
+        // Demo mode storage for active teams
+        let demoActiveTeams = ['team-1'];
+
         // If no database URL, return demo data
         if (!process.env.DATABASE_URL) {
-            console.log('[DATA] No DATABASE_URL - returning demo data');
+            console.log('[DATA] No DATABASE_URL - using demo mode');
             if (req.method === 'GET') {
                 switch (entity) {
                     case 'teams':
@@ -45,7 +48,7 @@ export default async function handler(req, res) {
                         }
                         return res.status(200).json([]);
                     case 'activeTeamIds':
-                        return res.status(200).json(['team-1', 'team-2']);
+                        return res.status(200).json(demoActiveTeams);
                     case 'scoringSystem':
                         return res.status(200).json(10);
                     case 'finalScores':
@@ -57,6 +60,28 @@ export default async function handler(req, res) {
                         return res.status(200).json([]);
                 }
             }
+            
+            // Handle POST requests in demo mode
+            if (req.method === 'POST') {
+                switch (entity) {
+                    case 'toggleActiveTeam': {
+                        const { teamId } = req.body;
+                        console.log('[DATA] Demo mode - Toggle team activation for:', teamId);
+                        
+                        if (demoActiveTeams.includes(teamId)) {
+                            demoActiveTeams = demoActiveTeams.filter(id => id !== teamId);
+                        } else {
+                            demoActiveTeams.push(teamId);
+                        }
+                        
+                        console.log('[DATA] Demo active teams now:', demoActiveTeams);
+                        return res.status(200).json({ success: true, activeTeamIds: demoActiveTeams });
+                    }
+                    default:
+                        return res.status(200).json({ success: true });
+                }
+            }
+            
             return res.status(200).json({ success: true });
         }
 
@@ -248,6 +273,29 @@ export default async function handler(req, res) {
                         }
                         await client.query('UPDATE app_state SET scoring_system = $1 WHERE id = 1', [scoringSystem]);
                         return res.status(200).json({ success: true });
+                    }
+                    case 'toggleActiveTeam': {
+                        const { teamId } = req.body;
+                        console.log('[DATA] Toggle team activation for:', teamId);
+                        
+                        // Get current active team IDs
+                        const { rows } = await client.query('SELECT active_team_ids FROM app_state WHERE id = 1');
+                        let currentActiveIds = rows.length > 0 ? rows[0].active_team_ids : [];
+                        
+                        // Toggle team activation
+                        if (currentActiveIds.includes(teamId)) {
+                            // Remove from active list
+                            currentActiveIds = currentActiveIds.filter(id => id !== teamId);
+                        } else {
+                            // Add to active list
+                            currentActiveIds.push(teamId);
+                        }
+                        
+                        // Update database
+                        await client.query('UPDATE app_state SET active_team_ids = $1 WHERE id = 1', [currentActiveIds]);
+                        console.log('[DATA] Updated active team IDs:', currentActiveIds);
+                        
+                        return res.status(200).json({ success: true, activeTeamIds: currentActiveIds });
                     }
                     default:
                         return res.status(200).json({ success: true });

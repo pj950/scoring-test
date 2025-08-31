@@ -1,4 +1,5 @@
 import cookie from 'cookie';
+import { Pool } from '@neondatabase/serverless';
 
 // 简单的内存会话存储（仅用于演示模式）
 let demoSession = null;
@@ -29,21 +30,21 @@ export default function handler(req, res) {
             const { loginCode } = req.body || {};
             console.log('[AUTH] Login attempt with code:', loginCode);
             
-            // Accept common admin codes
-            if (loginCode === 'ADMIN-2024' || loginCode === 'admin' || loginCode === 'ADMIN') {
+            // Check admin codes first
+            const adminCode = process.env.VITE_ADMIN_LOGIN_CODE || 'ADMIN-2024';
+            if (loginCode === adminCode || loginCode === 'admin' || loginCode === 'ADMIN') {
                 demoSession = { 
                     role: 'ADMIN',
                     user: { id: 'admin', name: 'Admin User' },
                     timestamp: Date.now()
                 };
                 
-                // Set a simple cookie for demo
                 res.setHeader('Set-Cookie', cookie.serialize('demo_session', 'admin', {
                     httpOnly: true,
                     secure: process.env.NODE_ENV === 'production',
                     sameSite: 'strict',
                     path: '/',
-                    maxAge: 86400 // 24 hours
+                    maxAge: 86400
                 }));
                 
                 return res.status(200).json({ 
@@ -53,8 +54,42 @@ export default function handler(req, res) {
                 });
             }
             
-            // Accept judge demo codes
-            if (loginCode === 'JUDGE-DEMO' || loginCode === 'judge') {
+            // Check if it's a judge code - try database first, then demo
+            if (process.env.DATABASE_URL) {
+                try {
+                    const client = new Pool({ connectionString: process.env.DATABASE_URL });
+                    const { rows } = await client.query('SELECT * FROM judges WHERE secret_id = $1', [loginCode]);
+                    await client.end();
+                    
+                    if (rows.length > 0) {
+                        const judge = rows[0];
+                        demoSession = {
+                            role: 'JUDGE',
+                            user: judge,
+                            timestamp: Date.now()
+                        };
+                        
+                        res.setHeader('Set-Cookie', cookie.serialize('demo_session', 'judge', {
+                            httpOnly: true,
+                            secure: process.env.NODE_ENV === 'production',
+                            sameSite: 'strict',
+                            path: '/',
+                            maxAge: 86400
+                        }));
+                        
+                        return res.status(200).json({ 
+                            success: true, 
+                            role: 'JUDGE',
+                            user: judge
+                        });
+                    }
+                } catch (dbError) {
+                    console.log('[AUTH] Database check failed, trying demo codes');
+                }
+            }
+            
+            // Accept judge demo codes if database check failed
+            if (loginCode === 'JUDGE-DEMO' || loginCode === 'judge' || loginCode.startsWith('JUDGE-')) {
                 demoSession = {
                     role: 'JUDGE',
                     user: { id: 'judge-1', name: 'Demo Judge', secret_id: loginCode },
@@ -76,7 +111,7 @@ export default function handler(req, res) {
                 });
             }
             
-            return res.status(401).json({ error: 'Invalid login code. Try: ADMIN-2024 or JUDGE-DEMO' });
+            return res.status(401).json({ error: 'Invalid login code. Try: ADMIN-2024 for admin or any JUDGE-XXXX code for judge access' });
         }
 
         if (req.method === 'GET' && action === 'session') {
