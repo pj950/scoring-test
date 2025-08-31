@@ -250,8 +250,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                             const weight = criteriaMap.get(criterionId);
                             if (weight) {
                                 const score = Number(rating.scores[criterionId]);
-                                // Normalize score to percentage based on scoring system
-                                judgeWeightedScore += (score / scoringSystem) * weight;
+                                // 修复：正确的计分逻辑
+                                // 将分数标准化为0-1范围，然后乘以权重，最后乘以分制
+                                const normalizedScore = score / scoringSystem; // 0-1范围
+                                const weightedScore = normalizedScore * (weight / 100); // 按权重计算
+                                judgeWeightedScore += weightedScore * scoringSystem; // 恢复到选择的分制
                             }
                         }
                         return judgeWeightedScore;
