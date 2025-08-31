@@ -99,15 +99,54 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
   };
   
   const exportToExcel = () => {
-    const ws_data = finalScores.map(s => ({
-        Rank: s.rank,
-        Team: s.teamName,
-        'Final Score (%)': s.weightedScore,
-    }));
-    const ws = utils.json_to_sheet(ws_data);
+    // 创建评委评分导出数据
+    const exportData: any[] = [];
+    
+    // 为每个团队创建行
+    teams.forEach(team => {
+      const teamScores: any = {
+        'Team Name': team.name,
+        'Team ID': team.id
+      };
+      
+      // 为每个评委添加列
+      judges.forEach(judge => {
+        const judgeScore = scores.find(s => s.teamId === team.id && s.judgeId === judge.id);
+        
+        if (judgeScore && judgeScore.scores) {
+          // 添加每个评分标准的分数
+          criteria.forEach(criterion => {
+            const score = judgeScore.scores[criterion.id];
+            const columnName = `${judge.name} - ${criterion.name}`;
+            teamScores[columnName] = score !== undefined ? score : '';
+          });
+          
+          // 添加该评委给这个团队的总分
+          let judgeTotal = 0;
+          criteria.forEach(criterion => {
+            const score = judgeScore.scores[criterion.id];
+            if (score !== undefined) {
+              judgeTotal += (score * criterion.weight) / 100;
+            }
+          });
+          teamScores[`${judge.name} - Total`] = judgeTotal.toFixed(2);
+        } else {
+          // 评委没有评分，显示空白
+          criteria.forEach(criterion => {
+            const columnName = `${judge.name} - ${criterion.name}`;
+            teamScores[columnName] = '';
+          });
+          teamScores[`${judge.name} - Total`] = '';
+        }
+      });
+      
+      exportData.push(teamScores);
+    });
+    
+    const ws = utils.json_to_sheet(exportData);
     const wb = utils.book_new();
-    utils.book_append_sheet(wb, ws, 'Hackathon Results');
-    writeFile(wb, 'Hackathon_Results.xlsx');
+    utils.book_append_sheet(wb, ws, 'Judge Scores');
+    writeFile(wb, 'Judge_Scores.xlsx');
   };
 
 
@@ -166,33 +205,15 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
     
     return (
       <div>
-          {/* Scoring System Selector */}
+          {/* Scoring System Info (Hidden Selector - Always 10-Point) */}
           <div className="p-4 mb-4 border rounded-lg bg-slate-800 border-slate-700">
               <h3 className="text-lg font-semibold font-display mb-3">Scoring System</h3>
-              <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                      <input 
-                          type="radio" 
-                          value={10} 
-                          checked={scoringSystem === 10}
-                          onChange={(e) => handleScoringSystemChange(parseInt(e.target.value))}
-                          className="text-cyber-400 focus:ring-cyber-400"
-                      />
-                      <span className="text-gray-300">10-Point System (0-10)</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                      <input 
-                          type="radio" 
-                          value={100} 
-                          checked={scoringSystem === 100}
-                          onChange={(e) => handleScoringSystemChange(parseInt(e.target.value))}
-                          className="text-cyber-400 focus:ring-cyber-400"
-                      />
-                      <span className="text-gray-300">100-Point System (0-100)</span>
-                  </label>
+              <div className="flex items-center gap-2">
+                  <span className="text-cyber-400 font-semibold">10-Point System (0-10)</span>
+                  <span className="text-gray-400">- Each criterion scored from 0 to 10 points</span>
               </div>
               <p className="text-sm text-gray-400 mt-2">
-                  Each criterion will be scored from 0 to {scoringSystem} points. Maximum possible score per criterion: {scoringSystem} points.
+                  Each criterion will be scored from 0 to 10 points. Maximum possible total score: 10 points.
               </p>
           </div>
 
