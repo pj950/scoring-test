@@ -71,16 +71,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
     }
   };
 
-  const handleScoringSystemChange = async (newScoringSystem: number) => {
-    if (confirm(`Are you sure you want to change the scoring system to ${newScoringSystem}-point system? This will affect how scores are calculated.`)) {
-      await fetch('/api/data?entity=setScoringSystem', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scoringSystem: newScoringSystem }),
-      });
-      mutateAll();
-    }
-  };
+
 
   const handleDeleteItem = async (entity: 'teams' | 'judges' | 'criteria', id: string) => {
     if(confirm('Are you sure you want to delete this item? This action cannot be undone.')) {
