@@ -96,8 +96,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
     // 为每个团队创建行
     teams.forEach(team => {
       const teamScores: any = {
-        'Team Name': team.name,
-        'Team ID': team.id
+        'Team Name': team.name
       };
       
       // 为每个评委添加列
