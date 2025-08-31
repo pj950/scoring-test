@@ -18,8 +18,9 @@ export default async function handler(req, res) {
 
         console.log('[DATA] Request:', { entity, method: req.method, hasDbUrl: !!process.env.DATABASE_URL });
 
-        // Demo mode storage for active teams
+        // Demo mode storage for active teams and scores
         let demoActiveTeams = ['team-1'];
+        let demoScores = [];
 
         // If no database URL, return demo data
         if (!process.env.DATABASE_URL) {
@@ -44,9 +45,17 @@ export default async function handler(req, res) {
                         ]);
                     case 'scores':
                         if (judgeId && teamId) {
-                            return res.status(200).json({ teamId, judgeId, scores: {} });
+                            console.log('[DATA] Demo mode - Getting specific score for judge:', judgeId, 'team:', teamId);
+                            const existingScore = demoScores.find(s => s.teamId === teamId && s.judgeId === judgeId);
+                            return res.status(200).json(existingScore || null);
                         }
-                        return res.status(200).json([]);
+                        if (judgeId) {
+                            console.log('[DATA] Demo mode - Getting scores for judge:', judgeId);
+                            const judgeScores = demoScores.filter(s => s.judgeId === judgeId);
+                            return res.status(200).json(judgeScores);
+                        }
+                        console.log('[DATA] Demo mode - Getting all scores:', demoScores);
+                        return res.status(200).json(demoScores);
                     case 'activeTeamIds':
                         return res.status(200).json(demoActiveTeams);
                     case 'scoringSystem':
@@ -76,6 +85,34 @@ export default async function handler(req, res) {
                         
                         console.log('[DATA] Demo active teams now:', demoActiveTeams);
                         return res.status(200).json({ success: true, activeTeamIds: demoActiveTeams });
+                    }
+                    case 'scores': {
+                        const { teamId, judgeId, scores } = req.body;
+                        console.log('[DATA] Demo mode - Saving score:', { teamId, judgeId, scores });
+                        
+                        // Remove existing score for this judge-team combination
+                        demoScores = demoScores.filter(s => !(s.teamId === teamId && s.judgeId === judgeId));
+                        
+                        // Add new score
+                        demoScores.push({ teamId, judgeId, scores });
+                        
+                        console.log('[DATA] Demo scores now:', demoScores);
+                        return res.status(201).json({ success: true });
+                    }
+                    case 'teams': {
+                        const { name } = req.body;
+                        console.log('[DATA] Demo mode - Adding team:', name);
+                        return res.status(201).json({ success: true });
+                    }
+                    case 'judges': {
+                        const { name } = req.body;
+                        console.log('[DATA] Demo mode - Adding judge:', name);
+                        return res.status(201).json({ success: true });
+                    }
+                    case 'criteria': {
+                        const { name, weight } = req.body;
+                        console.log('[DATA] Demo mode - Adding criterion:', name, weight);
+                        return res.status(201).json({ success: true });
                     }
                     default:
                         return res.status(200).json({ success: true });
@@ -127,15 +164,32 @@ export default async function handler(req, res) {
                     }
                     case 'scores': {
                         if (judgeId && teamId) {
+                            console.log('[DATA] Getting specific score for judge:', judgeId, 'team:', teamId);
                             const { rows } = await client.query('SELECT scores FROM ratings WHERE judge_id = $1 AND team_id = $2', [judgeId, teamId]);
-                            return res.status(200).json(rows.length > 0 ? { teamId, judgeId, scores: rows[0].scores } : null);
+                            const result = rows.length > 0 ? { teamId, judgeId, scores: rows[0].scores } : null;
+                            console.log('[DATA] Specific score result:', result);
+                            return res.status(200).json(result);
                         }
+                        if (judgeId) {
+                            console.log('[DATA] Getting all scores for judge:', judgeId);
+                            const { rows } = await client.query('SELECT team_id, scores FROM ratings WHERE judge_id = $1', [judgeId]);
+                            const result = rows.map(row => ({
+                                teamId: row.team_id,
+                                judgeId: judgeId,
+                                scores: row.scores
+                            }));
+                            console.log('[DATA] Judge scores result:', result);
+                            return res.status(200).json(result);
+                        }
+                        console.log('[DATA] Getting all scores');
                         const { rows } = await client.query('SELECT team_id, judge_id, scores FROM ratings');
-                        return res.status(200).json(rows.map(row => ({
+                        const result = rows.map(row => ({
                             teamId: row.team_id,
                             judgeId: row.judge_id,
                             scores: row.scores
-                        })) || []);
+                        }));
+                        console.log('[DATA] All scores result:', result);
+                        return res.status(200).json(result);
                     }
                     case 'activeTeamIds': {
                         const { rows } = await client.query('SELECT active_team_ids FROM app_state WHERE id = 1');
