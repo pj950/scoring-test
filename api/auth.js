@@ -1,7 +1,6 @@
 import cookie from 'cookie';
-import { Pool } from '@neondatabase/serverless';
 
-// 简单的内存会话存储（仅用于演示模式）
+// 简单的内存会话存储
 let demoSession = null;
 
 export default function handler(req, res) {
@@ -23,16 +22,35 @@ export default function handler(req, res) {
             action, 
             method: req.method,
             hasSession: !!demoSession,
-            envVars: Object.keys(process.env).filter(key => key.includes('DATABASE') || key.includes('JWT') || key.includes('ADMIN'))
+            url: req.url,
+            body: req.body
         });
 
         if (req.method === 'POST' && action === 'login') {
-            const { loginCode } = req.body || {};
-            console.log('[AUTH] Login attempt with code:', loginCode);
+            // Try to get loginCode from different sources
+            let loginCode;
             
-            // Check admin codes first
-            const adminCode = process.env.VITE_ADMIN_LOGIN_CODE || 'ADMIN-2024';
-            if (loginCode === adminCode || loginCode === 'admin' || loginCode === 'ADMIN') {
+            if (req.body && typeof req.body === 'object') {
+                loginCode = req.body.loginCode;
+            } else if (req.body && typeof req.body === 'string') {
+                try {
+                    const parsed = JSON.parse(req.body);
+                    loginCode = parsed.loginCode;
+                } catch (e) {
+                    loginCode = req.body;
+                }
+            }
+            
+            console.log('[AUTH] Login code extracted:', loginCode);
+            
+            // Very permissive admin check
+            if (loginCode && (
+                loginCode.toLowerCase() === 'admin' ||
+                loginCode === 'ADMIN' ||
+                loginCode === 'ADMIN-2024' ||
+                loginCode === 'admin-2024'
+            )) {
+                console.log('[AUTH] Admin login successful');
                 demoSession = { 
                     role: 'ADMIN',
                     user: { id: 'admin', name: 'Admin User' },
@@ -41,55 +59,25 @@ export default function handler(req, res) {
                 
                 res.setHeader('Set-Cookie', cookie.serialize('demo_session', 'admin', {
                     httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
+                    secure: false, // Set to false for debugging
+                    sameSite: 'lax', // More permissive
                     path: '/',
                     maxAge: 86400
                 }));
                 
                 return res.status(200).json({ 
                     success: true, 
-                    role: 'ADMIN',
-                    message: 'Successfully logged in as admin'
+                    role: 'ADMIN'
                 });
             }
             
-            // Check if it's a judge code - try database first, then demo
-            if (process.env.DATABASE_URL) {
-                try {
-                    const client = new Pool({ connectionString: process.env.DATABASE_URL });
-                    const { rows } = await client.query('SELECT * FROM judges WHERE secret_id = $1', [loginCode]);
-                    await client.end();
-                    
-                    if (rows.length > 0) {
-                        const judge = rows[0];
-                        demoSession = {
-                            role: 'JUDGE',
-                            user: judge,
-                            timestamp: Date.now()
-                        };
-                        
-                        res.setHeader('Set-Cookie', cookie.serialize('demo_session', 'judge', {
-                            httpOnly: true,
-                            secure: process.env.NODE_ENV === 'production',
-                            sameSite: 'strict',
-                            path: '/',
-                            maxAge: 86400
-                        }));
-                        
-                        return res.status(200).json({ 
-                            success: true, 
-                            role: 'JUDGE',
-                            user: judge
-                        });
-                    }
-                } catch (dbError) {
-                    console.log('[AUTH] Database check failed, trying demo codes');
-                }
-            }
-            
-            // Accept judge demo codes if database check failed
-            if (loginCode === 'JUDGE-DEMO' || loginCode === 'judge' || loginCode.startsWith('JUDGE-')) {
+            // Judge login
+            if (loginCode && (
+                loginCode === 'JUDGE-DEMO' ||
+                loginCode.toLowerCase() === 'judge' ||
+                loginCode.startsWith('JUDGE-')
+            )) {
+                console.log('[AUTH] Judge login successful');
                 demoSession = {
                     role: 'JUDGE',
                     user: { id: 'judge-1', name: 'Demo Judge', secret_id: loginCode },
@@ -98,8 +86,8 @@ export default function handler(req, res) {
                 
                 res.setHeader('Set-Cookie', cookie.serialize('demo_session', 'judge', {
                     httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
+                    secure: false,
+                    sameSite: 'lax',
                     path: '/',
                     maxAge: 86400
                 }));
@@ -111,7 +99,16 @@ export default function handler(req, res) {
                 });
             }
             
-            return res.status(401).json({ error: 'Invalid login code. Try: ADMIN-2024 for admin or any JUDGE-XXXX code for judge access' });
+            console.log('[AUTH] Login failed for code:', loginCode);
+            return res.status(401).json({ 
+                error: 'Invalid login code. Access denied.',
+                debug: {
+                    receivedCode: loginCode,
+                    codeType: typeof loginCode,
+                    bodyReceived: req.body,
+                    acceptedCodes: ['admin', 'ADMIN', 'ADMIN-2024', 'JUDGE-DEMO', 'judge']
+                }
+            });
         }
 
         if (req.method === 'GET' && action === 'session') {
@@ -119,8 +116,10 @@ export default function handler(req, res) {
             const cookies = cookie.parse(req.headers.cookie || '');
             const sessionCookie = cookies.demo_session;
             
+            console.log('[AUTH] Session check:', { hasSession: !!demoSession, sessionCookie });
+            
             if (sessionCookie && demoSession) {
-                console.log('[AUTH] Found demo session:', demoSession.role);
+                console.log('[AUTH] Found valid session:', demoSession.role);
                 return res.status(200).json(demoSession);
             }
             
@@ -131,8 +130,8 @@ export default function handler(req, res) {
             demoSession = null;
             res.setHeader('Set-Cookie', cookie.serialize('demo_session', '', {
                 httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
+                secure: false,
+                sameSite: 'lax',
                 path: '/',
                 expires: new Date(0)
             }));
