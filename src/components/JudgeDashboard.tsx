@@ -20,17 +20,20 @@ const ScoringModal: React.FC<{
   const [scores, setScores] = useState<Record<string, number>>({});
 
   useEffect(() => {
+    // 每当team.id变化时，强制重置状态
+    const initialScores: Record<string, number> = {};
+    criteria.forEach(c => {
+      initialScores[c.id] = 0;
+    });
+    setScores(initialScores);
+  }, [team.id, criteria]);
+
+  useEffect(() => {
+    // 当获取到评分数据时，更新状态
     if (judgeScores?.scores) {
       setScores(judgeScores.scores);
-    } else {
-      // Pre-fill scores with 0 if there are no existing scores
-      const initialScores: Record<string, number> = {};
-      criteria.forEach(c => {
-        initialScores[c.id] = 0;
-      });
-      setScores(initialScores);
     }
-  }, [judgeScores, criteria]);
+  }, [judgeScores]);
 
   const handleScoreChange = (criterionId: string, value: number) => {
     setScores(prev => ({ ...prev, [criterionId]: value }));
@@ -57,6 +60,10 @@ const ScoringModal: React.FC<{
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newScore),
     });
+    
+    // 立即刷新当前团队的评分数据
+    mutate(`/api/data?entity=scores&judgeId=${judgeId}&teamId=${team.id}`);
+    
     onSubmit();
     onClose();
   };
@@ -129,6 +136,10 @@ const JudgeDashboard: React.FC<JudgeDashboardProps> = ({ judge, onLogout }) => {
   
   const refreshAllScores = () => {
     mutate(`/api/data?entity=scores&judgeId=${judge.id}`);
+    // 同时刷新所有团队的特定评分缓存
+    teams.forEach(team => {
+      mutate(`/api/data?entity=scores&judgeId=${judge.id}&teamId=${team.id}`);
+    });
   }
 
   return (
@@ -187,6 +198,7 @@ const JudgeDashboard: React.FC<JudgeDashboardProps> = ({ judge, onLogout }) => {
 
       {scoringTeam && (
         <ScoringModal 
+            key={`${scoringTeam.id}-${judge.id}`}
             team={scoringTeam}
             criteria={criteria}
             judgeId={judge.id}
