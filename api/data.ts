@@ -344,6 +344,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 await client.query('UPDATE app_state SET scoring_system = $1 WHERE id = 1', [scoringSystem]);
                 return res.status(200).json({ success: true });
             }
+            if (entity === 'clearAllScores') {
+                // 清空所有评分数据
+                await client.query('DELETE FROM ratings');
+                return res.status(200).json({ success: true, message: 'All scores cleared successfully' });
+            }
+            if (entity === 'clearJudgeScores') {
+                const { judgeId } = req.body;
+                if (!judgeId) return res.status(400).json({ error: 'judgeId is required' });
+                
+                // 清空指定评委的所有评分
+                await client.query('DELETE FROM ratings WHERE judge_id = $1', [judgeId]);
+                return res.status(200).json({ success: true, message: 'Judge scores cleared successfully' });
+            }
         }
         
         // --- DELETE Requests ---

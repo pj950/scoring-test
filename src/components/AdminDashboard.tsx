@@ -89,6 +89,27 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
     mutateAll();
   };
   
+  const clearAllScores = async () => {
+    if (confirm('确定要清空所有评分吗？此操作不可撤销！')) {
+      try {
+        const response = await fetch('/api/data?entity=clearAllScores', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        
+        if (response.ok) {
+          mutateAll(); // 刷新所有数据
+          alert('所有评分已清空');
+        } else {
+          alert('清空评分失败，请重试');
+        }
+      } catch (error) {
+        console.error('Clear scores error:', error);
+        alert('清空评分失败，请重试');
+      }
+    }
+  };
+
   const exportToExcel = () => {
     // 创建评委评分导出数据
     const exportData: any[] = [];
@@ -327,7 +348,12 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
         <div>
             <div className="flex justify-between items-center mb-3">
                 <h3 className="text-xl font-bold font-display">Leaderboard</h3>
-                <button onClick={exportToExcel} disabled={!scores || scores.length === 0} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-500 disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors">Export to Excel</button>
+                <div className="flex gap-2">
+                    <button onClick={clearAllScores} disabled={!scores || scores.length === 0} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-500 disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors">
+                        清空所有评分
+                    </button>
+                    <button onClick={exportToExcel} disabled={!scores || scores.length === 0} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-500 disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors">Export to Excel</button>
+                </div>
             </div>
             <div className="space-y-3">
                 {finalScores.map((s, idx) => {

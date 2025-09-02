@@ -35,6 +35,16 @@ const ScoringModal: React.FC<{
   const handleScoreChange = (criterionId: string, value: number) => {
     setScores(prev => ({ ...prev, [criterionId]: value }));
   };
+
+  const handleClearScores = () => {
+    if (confirm('确定要清空当前评分吗？')) {
+      const clearedScores: Record<string, number> = {};
+      criteria.forEach(c => {
+        clearedScores[c.id] = 0;
+      });
+      setScores(clearedScores);
+    }
+  };
   
   const handleSubmit = async () => {
     const newScore: Score = {
@@ -90,9 +100,14 @@ const ScoringModal: React.FC<{
         </div>
         
         {/* Modal Footer */}
-        <div className="flex justify-end gap-4 p-6 pt-4 flex-shrink-0 border-t border-slate-700/50">
-          <button onClick={onClose} className="px-4 py-2 bg-slate-600 text-gray-200 rounded hover:bg-slate-500 transition-colors">Cancel</button>
-          <button onClick={handleSubmit} disabled={!isFormComplete} className="px-4 py-2 bg-cyber-600 text-white rounded hover:bg-cyber-500 disabled:bg-slate-700 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors">Submit Score</button>
+        <div className="flex justify-between p-6 pt-4 flex-shrink-0 border-t border-slate-700/50">
+          <button onClick={handleClearScores} className="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-500 transition-colors">
+            清空评分
+          </button>
+          <div className="flex gap-4">
+            <button onClick={onClose} className="px-4 py-2 bg-slate-600 text-gray-200 rounded hover:bg-slate-500 transition-colors">Cancel</button>
+            <button onClick={handleSubmit} disabled={!isFormComplete} className="px-4 py-2 bg-cyber-600 text-white rounded hover:bg-cyber-500 disabled:bg-slate-700 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors">Submit Score</button>
+          </div>
         </div>
       </div>
     </div>
