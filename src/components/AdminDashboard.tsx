@@ -80,6 +80,19 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
     }
   }
 
+  const handleClearAllScores = async () => {
+    if(confirm('Are you sure you want to clear ALL scores? This will delete all judge ratings and cannot be undone.')) {
+        if(confirm('This is your final confirmation. All scores will be permanently deleted. Continue?')) {
+            await fetch('/api/data?entity=clearAllScores', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            mutateAll();
+        }
+    }
+  }
+
   const toggleTeamActivation = async (id: string) => {
     await fetch('/api/data?entity=toggleActiveTeam', {
         method: 'POST',
@@ -297,7 +310,17 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
   const renderProgress = () => (
     <div className="space-y-8">
         <div>
-            <h3 className="text-xl font-bold mb-3 font-display">Scoring Progress Matrix</h3>
+            <div className="flex justify-between items-center mb-3">
+                <h3 className="text-xl font-bold font-display">Scoring Progress Matrix</h3>
+                <button 
+                    onClick={handleClearAllScores} 
+                    disabled={!scores || scores.length === 0} 
+                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-500 disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors text-sm"
+                    title="Clear all judge scores"
+                >
+                    Clear All Scores
+                </button>
+            </div>
             <div className="overflow-x-auto bg-slate-800/80 rounded-lg shadow-lg border border-slate-700">
                  <table className="min-w-full text-sm text-left text-gray-300">
                     <thead className="text-xs text-gray-400 uppercase bg-slate-700/50">
@@ -327,7 +350,22 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
         <div>
             <div className="flex justify-between items-center mb-3">
                 <h3 className="text-xl font-bold font-display">Leaderboard</h3>
-                <button onClick={exportToExcel} disabled={!scores || scores.length === 0} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-500 disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors">Export to Excel</button>
+                <div className="flex gap-2">
+                    <button 
+                        onClick={handleClearAllScores} 
+                        disabled={!scores || scores.length === 0} 
+                        className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-500 disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors"
+                    >
+                        Clear All Scores
+                    </button>
+                    <button 
+                        onClick={exportToExcel} 
+                        disabled={!scores || scores.length === 0} 
+                        className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-500 disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors"
+                    >
+                        Export to Excel
+                    </button>
+                </div>
             </div>
             <div className="space-y-3">
                 {finalScores.map((s, idx) => {
