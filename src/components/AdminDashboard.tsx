@@ -96,9 +96,10 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
     // 为每个团队创建行
     teams.forEach(team => {
       const teamScores: any = {
-        'Team Name': team.name
+        'Team Name': team.name,
+        'Final Score': ''
       };
-      
+      const teamJudgeScores: number[] = [];
       // 为每个评委添加列
       judges.forEach(judge => {
         const judgeScore = scores.find(s => s.teamId === team.id && s.judgeId === judge.id);
@@ -120,6 +121,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
             }
           });
           teamScores[`${judge.name} - Total`] = judgeTotal.toFixed(2);
+          teamJudgeScores.push(judgeTotal);
         } else {
           // 评委没有评分，显示空白
           criteria.forEach(criterion => {
@@ -129,7 +131,13 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
           teamScores[`${judge.name} - Total`] = '';
         }
       });
-      
+      if (teamJudgeScores.length > 0) {
+          const averageScore = teamJudgeScores.reduce((sum, score) => sum + score, 0) / teamJudgeScores.length;
+          teamScores['Final Score'] = averageScore.toFixed(2);
+      } 
+      else {
+        teamScores['Final Score'] = '';
+      }
       exportData.push(teamScores);
     });
     
