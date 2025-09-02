@@ -344,6 +344,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 await client.query('UPDATE app_state SET scoring_system = $1 WHERE id = 1', [scoringSystem]);
                 return res.status(200).json({ success: true });
             }
+            if (entity === 'clearAllScores') {
+                // Delete all scores from the ratings table
+                await client.query('DELETE FROM ratings');
+                return res.status(200).json({ success: true, message: 'All scores have been cleared' });
+            }
         }
         
         // --- DELETE Requests ---
