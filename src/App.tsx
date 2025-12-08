@@ -4,6 +4,7 @@ import LoginPage from './components/LoginPage';
 import AdminDashboard from './components/AdminDashboard';
 import JudgeDashboard from './components/JudgeDashboard';
 import LiveScoreboard from './components/LiveScoreboard';
+import NotFound from './components/NotFound';
 import type { Judge } from './types';
 import { SWRConfig } from 'swr';
 
@@ -17,6 +18,7 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<Judge | null>(null);
   const [loading, setLoading] = useState(true);
   const [publicPage, setPublicPage] = useState<PublicPage>('LOGIN');
+  const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
 
   const checkSession = useCallback(async () => {
     setLoading(true);
@@ -40,6 +42,18 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const checkMaintenance = async () => {
+      try {
+        const res = await fetch('/api/maintenance-check');
+        if (res.status === 404) {
+          setIsMaintenanceMode(true);
+        }
+      } catch (error) {
+        console.error("Maintenance check failed", error);
+      }
+    };
+    
+    checkMaintenance();
     checkSession();
   }, [checkSession]);
 
@@ -67,6 +81,10 @@ const App: React.FC = () => {
   const renderContent = () => {
     if (loading) {
         return <div className="flex items-center justify-center min-h-screen text-cyber-400 font-display text-2xl">Initializing System...</div>;
+    }
+
+    if (isMaintenanceMode) {
+        return <NotFound />;
     }
 
     // User is logged in
